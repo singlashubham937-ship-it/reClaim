@@ -1,6 +1,7 @@
-*.class
 bin/
 out/
+*.class
 .DS_Store
-*.iml
+.vscode/
 .idea/
+*.iml
