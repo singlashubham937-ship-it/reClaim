@@ -55,6 +55,13 @@ public class ClaimRepository {
     }
 
     /**
+     * Alias for findClaimById to adhere to standard getter naming.
+     */
+    public Claim getClaimById(int claimId) {
+        return findClaimById(claimId);
+    }
+
+    /**
      * Finds all claims submitted by a given student.
      *
      * @param studentId The ID of the student.
@@ -71,6 +78,13 @@ public class ClaimRepository {
     }
 
     /**
+     * Alias for findClaimsByStudentId.
+     */
+    public ArrayList<Claim> getClaimsByStudentId(int studentId) {
+        return findClaimsByStudentId(studentId);
+    }
+
+    /**
      * Finds all claims associated with a given item.
      *
      * @param itemId The item ID.
@@ -84,6 +98,13 @@ public class ClaimRepository {
             }
         }
         return result;
+    }
+
+    /**
+     * Alias for findClaimsByItemId.
+     */
+    public ArrayList<Claim> getClaimsByItemId(int itemId) {
+        return findClaimsByItemId(itemId);
     }
 
     /**

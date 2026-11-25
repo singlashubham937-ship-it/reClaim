@@ -14,21 +14,16 @@ import com.reclaim.repository.ItemRepository;
 import java.util.ArrayList;
 
 /**
- * Service managing item claims and verification workflows in reClaim.
- * Integrates with Member 1's ItemRepository and enforces university business rules.
+ * Service managing item claims, duplicate checking, and verification workflows in reClaim.
+ * Integrates with Member 1's ItemRepository and generates user notifications.
  */
 public class ClaimService {
 
     private final ClaimRepository claimRepository;
     private final ItemRepository itemRepository;
+    private NotificationService notificationService;
     private int nextClaimId = 1;
 
-    /**
-     * Constructs ClaimService with existing repositories.
-     *
-     * @param claimRepository Repository for claims.
-     * @param itemRepository  Repository for items.
-     */
     public ClaimService(ClaimRepository claimRepository, ItemRepository itemRepository) {
         if (claimRepository == null) {
             throw new IllegalArgumentException("ClaimRepository cannot be null.");
@@ -40,9 +35,11 @@ public class ClaimService {
         this.itemRepository = itemRepository;
     }
 
-    /**
-     * Default constructor initializing with new repositories.
-     */
+    public ClaimService(ClaimRepository claimRepository, ItemRepository itemRepository, NotificationService notificationService) {
+        this(claimRepository, itemRepository);
+        this.notificationService = notificationService;
+    }
+
     public ClaimService() {
         this(new ClaimRepository(), new ItemRepository());
     }
@@ -55,19 +52,28 @@ public class ClaimService {
         return itemRepository;
     }
 
+    public NotificationService getNotificationService() {
+        return notificationService;
+    }
+
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
+
     /**
      * Submits a new claim on an item.
      *
      * Business Rules enforced:
      * - Item must exist (throws ItemNotFoundException).
+     * - Prevent duplicate active claims by same student for same item (throws DuplicateClaimException).
      * - Item must be AVAILABLE (throws IllegalStateException).
-     * - Cannot submit duplicate active claim for the same student and item (throws DuplicateClaimException).
      * - Ownership proof cannot be null or incomplete (throws IllegalArgumentException).
      * - New claim always starts with PENDING status.
-     * - Updates item status to CLAIM_PENDING so no other claim can be accepted while pending.
+     * - Updates item status to CLAIM_PENDING.
+     * - Generates notification for student and finder.
      *
      * @param itemId         ID of the item being claimed.
-     * @param studentId       ID of the claiming student.
+     * @param studentId      ID of the claiming student.
      * @param ownershipProof Proof submitted by claimant.
      * @return The created Claim object.
      */
@@ -105,26 +111,46 @@ public class ClaimService {
 
         // 7. Save to repository
         claimRepository.addClaim(claim);
+
+        // 8. Generate notifications
+        if (notificationService != null) {
+            notificationService.sendNotification(studentId,
+                    "Claim #" + claimId + " submitted successfully for item '" + item.getName() + "' (ID: " + itemId + "). Status: PENDING.");
+            if (item.getFinderId() > 0) {
+                notificationService.sendNotification(item.getFinderId(),
+                        "New claim #" + claimId + " submitted by Student ID " + studentId + " for item '" + item.getName() + "'.");
+            }
+        }
+
         return claim;
     }
 
     /**
      * Returns all claims submitted by a given student.
-     *
-     * @param studentId The ID of the student.
-     * @return List of claims for that student.
      */
     public ArrayList<Claim> viewMyClaims(int studentId) {
         return claimRepository.findClaimsByStudentId(studentId);
     }
 
     /**
+     * Alias for viewMyClaims matching naming requirements.
+     */
+    public ArrayList<Claim> viewStudentClaims(int studentId) {
+        return viewMyClaims(studentId);
+    }
+
+    /**
      * Returns all claims currently in PENDING status awaiting review.
-     *
-     * @return List of pending claims.
      */
     public ArrayList<Claim> viewPendingClaims() {
         return claimRepository.getPendingClaims();
+    }
+
+    /**
+     * Retrieves full details of a specific claim.
+     */
+    public Claim getClaimDetails(int claimId) {
+        return claimRepository.getClaimById(claimId);
     }
 
     /**
@@ -162,6 +188,14 @@ public class ClaimService {
         claimRepository.updateClaim(claim);
 
         // Item remains CLAIM_PENDING - Handover / CLAIMED status is Member 3's responsibility
+
+        // Notify student of approval
+        if (notificationService != null) {
+            notificationService.sendNotification(claim.getStudentId(),
+                    "Good news! Your claim #" + claimId + " for item '" + item.getName() 
+                    + "' has been APPROVED by the finder. Remarks: " + remarks);
+        }
+
         return true;
     }
 
@@ -171,7 +205,7 @@ public class ClaimService {
      * Business Rules:
      * - Only the finder associated with the reported item can reject its claim.
      * - Claim must be in PENDING status.
-     * - If no other pending claims remain, item reverts to AVAILABLE.
+     * - If no other active claims exist, item reverts to AVAILABLE.
      *
      * @param claimId    The claim ID.
      * @param rejecterId The ID of the user attempting rejection (must match finderId).
@@ -211,16 +245,19 @@ public class ClaimService {
             item.setStatus(ItemStatus.AVAILABLE);
         }
 
+        // Notify student of rejection
+        if (notificationService != null) {
+            notificationService.sendNotification(claim.getStudentId(),
+                    "Update: Your claim #" + claimId + " for item '" + item.getName() 
+                    + "' was REJECTED by the finder. Reason: " + remarks);
+        }
+
         return true;
     }
 
     /**
      * Checks if an active claim already exists by the same student for the same item.
      * Active claims are those with status PENDING or APPROVED.
-     *
-     * @param itemId    The item ID.
-     * @param studentId The student ID.
-     * @return true if a duplicate active claim exists, false otherwise.
      */
     public boolean checkDuplicateClaim(int itemId, int studentId) {
         ArrayList<Claim> studentClaims = claimRepository.findClaimsByStudentId(studentId);
