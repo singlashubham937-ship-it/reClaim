@@ -134,6 +134,14 @@ public class HandoverService {
         return true;
     }
 
+    /**
+     * Returns all handovers associated with a user (as finder or owner).
+     * This helper is used by FinderMenu and StudentMenu.
+     */
+    public ArrayList<Handover> getHandoversByUser(String userId) {
+        return handoverRepository.getHandoversByUserId(userId);
+    }
+
     private void recordAuditLog(String userId, String action, String description) {
         String logId = "LOG-" + logCounter;
         logCounter++;
